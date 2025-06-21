@@ -103,6 +103,21 @@ function App() {
     }
   }, [selectedCurrency]);
 
+  // Check for premium features access and show auth/subscription modals
+  const checkPremiumAccess = (featureName: string) => {
+    if (!user) {
+      setShowAuthModal(true);
+      return false;
+    }
+    
+    if (!authService.hasPremiumAccess(userProfile)) {
+      setShowSubscriptionModal(true);
+      return false;
+    }
+    
+    return true;
+  };
+
   const checkAuth = async () => {
     try {
       const currentUser = await authService.getCurrentUser();
@@ -237,6 +252,8 @@ function App() {
   };
 
   const handleExportPDF = () => {
+    if (!checkPremiumAccess('PDF Export')) return;
+    
     const history = JSON.parse(localStorage.getItem(`countNoteHistory_${selectedCurrency}`) || '[]');
     if (history.length === 0) {
       alert('No data to export. Please save some counting sessions first.');
@@ -246,6 +263,8 @@ function App() {
   };
 
   const handleExportExcel = () => {
+    if (!checkPremiumAccess('Excel Export')) return;
+    
     const history = JSON.parse(localStorage.getItem(`countNoteHistory_${selectedCurrency}`) || '[]');
     if (history.length === 0) {
       alert('No data to export. Please save some counting sessions first.');
@@ -255,6 +274,8 @@ function App() {
   };
 
   const handlePrint = () => {
+    if (!checkPremiumAccess('Print Reports')) return;
+    
     const history = JSON.parse(localStorage.getItem(`countNoteHistory_${selectedCurrency}`) || '[]');
     if (history.length === 0) {
       alert('No data to print. Please save some counting sessions first.');
@@ -395,7 +416,11 @@ function App() {
                   userProfile={userProfile}
                   onUpgradeClick={() => {
                     setShowMenu(false);
-                    setShowSubscriptionModal(true);
+                    if (!user) {
+                      setShowAuthModal(true);
+                    } else {
+                      setShowSubscriptionModal(true);
+                    }
                   }}
                   featureName="PDF Export"
                 >
@@ -415,7 +440,11 @@ function App() {
                   userProfile={userProfile}
                   onUpgradeClick={() => {
                     setShowMenu(false);
-                    setShowSubscriptionModal(true);
+                    if (!user) {
+                      setShowAuthModal(true);
+                    } else {
+                      setShowSubscriptionModal(true);
+                    }
                   }}
                   featureName="Excel Export"
                 >
@@ -435,7 +464,11 @@ function App() {
                   userProfile={userProfile}
                   onUpgradeClick={() => {
                     setShowMenu(false);
-                    setShowSubscriptionModal(true);
+                    if (!user) {
+                      setShowAuthModal(true);
+                    } else {
+                      setShowSubscriptionModal(true);
+                    }
                   }}
                   featureName="Print Reports"
                 >
@@ -785,7 +818,13 @@ function App() {
                   hideAmounts={hideAmounts} 
                   selectedCurrency={selectedCurrency}
                   userProfile={userProfile}
-                  onUpgradeClick={() => setShowSubscriptionModal(true)}
+                  onUpgradeClick={() => {
+                    if (!user) {
+                      setShowAuthModal(true);
+                    } else {
+                      setShowSubscriptionModal(true);
+                    }
+                  }}
                 />
               )}
             </div>
@@ -822,7 +861,7 @@ function App() {
                     <Heart size={20} className="mr-2" />
                     <span>Sponsor</span>
                   </a>
-                  <span className="text-gray-400 text-sm">Version 10.0.0</span>
+                  <span className="text-gray-400 text-sm">Version 10.1.0</span>
                 </div>
               </div>
             </footer>

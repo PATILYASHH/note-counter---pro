@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Crown, Check, CreditCard, Shield, Cloud, Smartphone, FileText, Printer } from 'lucide-react';
+import { X, Crown, Check, CreditCard, Shield, Cloud, Smartphone, FileText, Printer, AlertCircle } from 'lucide-react';
 import { authService } from '../lib/auth';
+import { stripeService, isStripeConfigured, STRIPE_PRICES } from '../lib/stripe';
 import { UserProfile } from '../lib/auth';
 
 interface SubscriptionModalProps {
@@ -28,27 +29,46 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
       price: 9.99,
       period: 'month',
       savings: null,
+      priceId: STRIPE_PRICES.monthly,
     },
     annual: {
       name: 'Annual Plan',
       price: 100,
       period: 'year',
       savings: 19.88,
+      priceId: STRIPE_PRICES.annual,
     }
   };
 
   const handleSubscribe = async () => {
-    if (!userProfile) return;
+    if (!userProfile) {
+      setError('Please sign in to subscribe');
+      return;
+    }
     
     setLoading(true);
     setError('');
 
     try {
-      // In a real app, this would integrate with Stripe or another payment processor
-      // For demo purposes, we'll simulate the subscription activation
-      await authService.updateSubscription(userProfile.id, selectedPlan);
-      onSubscriptionSuccess();
-      onClose();
+      if (isStripeConfigured()) {
+        // Use real Stripe integration
+        await stripeService.createCheckoutSession(
+          plans[selectedPlan].priceId,
+          userProfile.id,
+          userProfile.email
+        );
+      } else {
+        // Demo mode - simulate payment
+        console.log('Demo mode: Simulating payment...');
+        await stripeService.simulatePayment(selectedPlan);
+        
+        // Update subscription in database
+        await authService.updateSubscription(userProfile.id, selectedPlan);
+        
+        alert('🎉 Subscription activated successfully! (Demo mode)');
+        onSubscriptionSuccess();
+        onClose();
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to process subscription');
     } finally {
@@ -72,6 +92,13 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
               <X size={24} />
             </button>
           </div>
+
+          {!isStripeConfigured() && (
+            <div className="mb-4 p-3 bg-blue-100 border border-blue-400 text-blue-700 rounded-md flex items-center">
+              <AlertCircle size={18} className="mr-2" />
+              Demo mode: Stripe not configured. Subscription will be simulated.
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md">
@@ -210,15 +237,18 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
               </div>
               <button
                 onClick={handleSubscribe}
-                disabled={loading}
+                disabled={loading || !userProfile}
                 className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 px-8 rounded-lg font-bold text-lg hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg transform hover:scale-105 flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <CreditCard size={20} className="mr-2" />
-                {loading ? 'Processing...' : 'Subscribe Now'}
+                {loading ? 'Processing...' : isStripeConfigured() ? 'Subscribe with Stripe' : 'Subscribe Now (Demo)'}
               </button>
             </div>
             <p className="text-gray-500 text-sm text-center">
-              Secure payment • Cancel anytime • 7-day money-back guarantee
+              {isStripeConfigured() 
+                ? 'Secure payment with Stripe • Cancel anytime • 7-day money-back guarantee'
+                : 'Demo mode: No actual payment required • Full features unlocked for testing'
+              }
             </p>
           </div>
         </div>
