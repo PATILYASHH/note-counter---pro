@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { IndianRupee, Trash2, Save, Clock, Calculator, DollarSign } from 'lucide-react';
+import { IndianRupee, Trash2, Save, Clock, Calculator, DollarSign, Download, FileText, Printer } from 'lucide-react';
+import { UserProfile } from '../lib/auth';
+import { exportService } from '../lib/exportService';
+import PremiumFeatureGate from './PremiumFeatureGate';
 
 interface HistoryEntry {
   id: string;
@@ -20,11 +23,13 @@ interface CalculatorHistory {
 interface HistoryTabProps {
   hideAmounts: boolean;
   selectedCurrency: 'INR' | 'USD';
+  userProfile: UserProfile | null;
+  onUpgradeClick: () => void;
 }
 
 type HistoryType = 'money' | 'calculator';
 
-const HistoryTab: React.FC<HistoryTabProps> = ({ hideAmounts, selectedCurrency }) => {
+const HistoryTab: React.FC<HistoryTabProps> = ({ hideAmounts, selectedCurrency, userProfile, onUpgradeClick }) => {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [calculatorHistory, setCalculatorHistory] = useState<CalculatorHistory[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<HistoryEntry | null>(null);
@@ -60,7 +65,6 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ hideAmounts, selectedCurrency }
     
     const counts = JSON.parse(currentCounts);
     
-    // Calculate totals
     const totalAmount = Object.entries(counts).reduce(
       (sum, [denomination, count]) => sum + (Number(denomination) * Number(count)), 
       0
@@ -71,8 +75,10 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ hideAmounts, selectedCurrency }
       0
     );
     
-    // Create new history entry
-    const newEntry: HistoryEntry = {
+    const savedHistory = localStorage.getItem(`countNoteHistory_${selectedCurrency}`) || '[]';
+    const history = JSON.parse(savedHistory);
+    
+    const newEntry = {
       id: Date.now().toString(),
       date: new Date().toLocaleString(),
       totalAmount,
@@ -82,14 +88,10 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ hideAmounts, selectedCurrency }
       note: note.trim() || undefined
     };
     
-    // Update history
     const updatedHistory = [newEntry, ...history];
     setHistory(updatedHistory);
-    
-    // Save to localStorage
     localStorage.setItem(`countNoteHistory_${selectedCurrency}`, JSON.stringify(updatedHistory));
     
-    // Reset note
     setNote('');
   };
 
@@ -138,6 +140,31 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ hideAmounts, selectedCurrency }
   // View details of a history entry
   const viewHistoryDetails = (entry: HistoryEntry) => {
     setSelectedEntry(entry);
+  };
+
+  // Export functions
+  const handleExportPDF = () => {
+    if (history.length === 0) {
+      alert('No data to export. Please save some counting sessions first.');
+      return;
+    }
+    exportService.exportToPDF(history, `Note Counter History - ${selectedCurrency}`);
+  };
+
+  const handleExportExcel = () => {
+    if (history.length === 0) {
+      alert('No data to export. Please save some counting sessions first.');
+      return;
+    }
+    exportService.exportToExcel(history, `Note Counter History - ${selectedCurrency}`);
+  };
+
+  const handlePrint = () => {
+    if (history.length === 0) {
+      alert('No data to print. Please save some counting sessions first.');
+      return;
+    }
+    exportService.printData(history, `Note Counter History - ${selectedCurrency}`);
   };
 
   // Format denomination for display
@@ -206,7 +233,7 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ hideAmounts, selectedCurrency }
           {activeHistoryType === 'money' && (
             <>
               <div className="mb-4">
-                <div className="flex space-x-2">
+                <div className="flex space-x-2 mb-2">
                   <input
                     type="text"
                     value={note}
@@ -221,6 +248,51 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ hideAmounts, selectedCurrency }
                     <Save size={18} className="mr-2" />
                     Save Current
                   </button>
+                </div>
+                
+                {/* Export buttons */}
+                <div className="flex space-x-2">
+                  <PremiumFeatureGate
+                    userProfile={userProfile}
+                    onUpgradeClick={onUpgradeClick}
+                    featureName="PDF Export"
+                  >
+                    <button
+                      onClick={handleExportPDF}
+                      className="bg-red-500 text-white px-3 py-1 rounded-md hover:bg-red-600 transition-colors flex items-center text-sm"
+                    >
+                      <FileText size={16} className="mr-1" />
+                      PDF
+                    </button>
+                  </PremiumFeatureGate>
+
+                  <PremiumFeatureGate
+                    userProfile={userProfile}
+                    onUpgradeClick={onUpgradeClick}
+                    featureName="Excel Export"
+                  >
+                    <button
+                      onClick={handleExportExcel}
+                      className="bg-green-500 text-white px-3 py-1 rounded-md hover:bg-green-600 transition-colors flex items-center text-sm"
+                    >
+                      <Download size={16} className="mr-1" />
+                      Excel
+                    </button>
+                  </PremiumFeatureGate>
+
+                  <PremiumFeatureGate
+                    userProfile={userProfile}
+                    onUpgradeClick={onUpgradeClick}
+                    featureName="Print Reports"
+                  >
+                    <button
+                      onClick={handlePrint}
+                      className="bg-indigo-500 text-white px-3 py-1 rounded-md hover:bg-indigo-600 transition-colors flex items-center text-sm"
+                    >
+                      <Printer size={16} className="mr-1" />
+                      Print
+                    </button>
+                  </PremiumFeatureGate>
                 </div>
               </div>
 

@@ -1,11 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { IndianRupee, Menu, Github, Globe, History, Calculator, Save, Eye, EyeOff, X, Mail, Heart, DollarSign, MenuIcon, Crown, Cloud, Smartphone, Shield, FileText, Printer } from 'lucide-react';
+import { IndianRupee, Menu, Github, Globe, History, Calculator, Save, Eye, EyeOff, X, Mail, Heart, DollarSign, MenuIcon, Crown, Cloud, Smartphone, Shield, FileText, Printer, User, LogOut, Download } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
+import { authService, UserProfile } from './lib/auth';
+import { cloudStorageService } from './lib/cloudStorage';
+import { exportService } from './lib/exportService';
 import DenominationCounter from './components/DenominationCounter';
 import HistoryTab from './components/HistoryTab';
 import SimpleCalculator from './components/SimpleCalculator';
 import Advertisement from './components/Advertisement';
+import AuthModal from './components/AuthModal';
+import SubscriptionModal from './components/SubscriptionModal';
+import PremiumFeatureGate from './components/PremiumFeatureGate';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 
@@ -45,8 +51,12 @@ function App() {
   const [sendToCalculator, setSendToCalculator] = useState(false);
   const [hideAmounts, setHideAmounts] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
-  const [showProModal, setShowProModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState<'INR' | 'USD'>('INR');
+  const [user, setUser] = useState<any>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
   const [counts, setCounts] = useState<CountState>(() => {
     const savedCounts = localStorage.getItem(`denominationCounts_${selectedCurrency}`);
     if (savedCounts) {
@@ -61,6 +71,26 @@ function App() {
   });
 
   useEffect(() => {
+    if (isSupabaseConfigured()) {
+      checkAuth();
+      
+      // Listen for auth changes
+      const { data: { subscription } } = supabase!.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+          setUser(session.user);
+          await loadUserProfile(session.user.id);
+          await syncFromCloud();
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          setUserProfile(null);
+        }
+      });
+
+      return () => subscription.unsubscribe();
+    }
+  }, []);
+
+  useEffect(() => {
     const savedCounts = localStorage.getItem(`denominationCounts_${selectedCurrency}`);
     if (savedCounts) {
       setCounts(JSON.parse(savedCounts));
@@ -72,6 +102,59 @@ function App() {
       setCounts(initialCounts);
     }
   }, [selectedCurrency]);
+
+  const checkAuth = async () => {
+    try {
+      const currentUser = await authService.getCurrentUser();
+      if (currentUser) {
+        setUser(currentUser);
+        await loadUserProfile(currentUser.id);
+      }
+    } catch (error) {
+      console.error('Auth check error:', error);
+    }
+  };
+
+  const loadUserProfile = async (userId: string) => {
+    try {
+      const profile = await authService.getUserProfile(userId);
+      setUserProfile(profile);
+    } catch (error) {
+      console.error('Error loading user profile:', error);
+    }
+  };
+
+  const syncToCloud = async () => {
+    if (!user || !authService.hasPremiumAccess(userProfile)) return;
+    
+    setSyncStatus('syncing');
+    try {
+      await cloudStorageService.syncToCloud(user.id, selectedCurrency);
+      setSyncStatus('synced');
+      setTimeout(() => setSyncStatus('idle'), 2000);
+    } catch (error) {
+      console.error('Sync to cloud failed:', error);
+      setSyncStatus('error');
+      setTimeout(() => setSyncStatus('idle'), 3000);
+    }
+  };
+
+  const syncFromCloud = async () => {
+    if (!user || !authService.hasPremiumAccess(userProfile)) return;
+    
+    setSyncStatus('syncing');
+    try {
+      await cloudStorageService.syncFromCloud(user.id, selectedCurrency);
+      setSyncStatus('synced');
+      setTimeout(() => setSyncStatus('idle'), 2000);
+      // Reload the page to reflect synced data
+      window.location.reload();
+    } catch (error) {
+      console.error('Sync from cloud failed:', error);
+      setSyncStatus('error');
+      setTimeout(() => setSyncStatus('idle'), 3000);
+    }
+  };
 
   const totalAmount = Object.entries(counts).reduce(
     (sum, [denomination, count]) => sum + (Number(denomination) * count), 
@@ -85,7 +168,16 @@ function App() {
 
   useEffect(() => {
     localStorage.setItem(`denominationCounts_${selectedCurrency}`, JSON.stringify(counts));
-  }, [counts, selectedCurrency]);
+    
+    // Auto-sync to cloud if premium user
+    if (user && authService.hasPremiumAccess(userProfile)) {
+      const debounceTimer = setTimeout(() => {
+        syncToCloud();
+      }, 2000);
+      
+      return () => clearTimeout(debounceTimer);
+    }
+  }, [counts, selectedCurrency, user, userProfile]);
 
   const handleCountChange = (denomination: number, count: number) => {
     if (isNaN(count)) return;
@@ -105,7 +197,7 @@ function App() {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const currentCounts = localStorage.getItem(`denominationCounts_${selectedCurrency}`);
     if (!currentCounts) return;
     
@@ -136,13 +228,49 @@ function App() {
     const updatedHistory = [newEntry, ...history];
     localStorage.setItem(`countNoteHistory_${selectedCurrency}`, JSON.stringify(updatedHistory));
     
+    // Sync to cloud if premium user
+    if (user && authService.hasPremiumAccess(userProfile)) {
+      await syncToCloud();
+    }
+    
     alert('Summary saved successfully!');
   };
 
-  const handleProUpgrade = () => {
-    // For now, just show an alert. In a real app, this would redirect to payment
-    alert('Pro features coming soon! This would redirect to the upgrade page.');
-    setShowProModal(false);
+  const handleExportPDF = () => {
+    const history = JSON.parse(localStorage.getItem(`countNoteHistory_${selectedCurrency}`) || '[]');
+    if (history.length === 0) {
+      alert('No data to export. Please save some counting sessions first.');
+      return;
+    }
+    exportService.exportToPDF(history, `Note Counter Report - ${selectedCurrency}`);
+  };
+
+  const handleExportExcel = () => {
+    const history = JSON.parse(localStorage.getItem(`countNoteHistory_${selectedCurrency}`) || '[]');
+    if (history.length === 0) {
+      alert('No data to export. Please save some counting sessions first.');
+      return;
+    }
+    exportService.exportToExcel(history, `Note Counter Report - ${selectedCurrency}`);
+  };
+
+  const handlePrint = () => {
+    const history = JSON.parse(localStorage.getItem(`countNoteHistory_${selectedCurrency}`) || '[]');
+    if (history.length === 0) {
+      alert('No data to print. Please save some counting sessions first.');
+      return;
+    }
+    exportService.printData(history, `Note Counter Report - ${selectedCurrency}`);
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await authService.signOut();
+      setUser(null);
+      setUserProfile(null);
+    } catch (error) {
+      console.error('Sign out error:', error);
+    }
   };
 
   const leftColumnDenominations = CURRENCY_DENOMINATIONS[selectedCurrency].slice(0, Math.ceil(CURRENCY_DENOMINATIONS[selectedCurrency].length / 2));
@@ -159,134 +287,18 @@ function App() {
 
   const CurrencyIcon = selectedCurrency === 'INR' ? IndianRupee : DollarSign;
 
-  const ProModal = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <div className="flex items-center">
-              <Crown className="text-yellow-500 mr-3" size={32} />
-              <h2 className="text-3xl font-bold text-gray-800">Upgrade to Pro Counter</h2>
-            </div>
-            <button
-              onClick={() => setShowProModal(false)}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              <X size={24} />
-            </button>
-          </div>
-          
-          <div className="mb-8">
-            <p className="text-lg text-gray-600 mb-4">
-              Unlock powerful features to take your money counting to the next level!
-            </p>
-            
-            <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-6 rounded-lg border border-yellow-200 mb-6">
-              <div className="text-center">
-                <div className="text-4xl font-bold text-orange-600 mb-2">$9.99/month</div>
-                <div className="text-gray-600">or $99/year (save 17%)</div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <h3 className="text-xl font-semibold text-gray-800 mb-4">Pro Features</h3>
-                
-                <div className="flex items-start space-x-3">
-                  <Cloud className="text-blue-500 mt-1" size={20} />
-                  <div>
-                    <h4 className="font-medium text-gray-800">Free Cloud Storage</h4>
-                    <p className="text-gray-600 text-sm">Unlimited cloud storage for all your counting data</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start space-x-3">
-                  <Smartphone className="text-green-500 mt-1" size={20} />
-                  <div>
-                    <h4 className="font-medium text-gray-800">Multi-Device Access</h4>
-                    <p className="text-gray-600 text-sm">Access your data from any device, anywhere</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start space-x-3">
-                  <Shield className="text-purple-500 mt-1" size={20} />
-                  <div>
-                    <h4 className="font-medium text-gray-800">Daily Data Backup</h4>
-                    <p className="text-gray-600 text-sm">Automatic daily backups ensure your data is never lost</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start space-x-3">
-                  <FileText className="text-red-500 mt-1" size={20} />
-                  <div>
-                    <h4 className="font-medium text-gray-800">PDF Export</h4>
-                    <p className="text-gray-600 text-sm">Export your counting reports as professional PDFs</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start space-x-3">
-                  <Printer className="text-indigo-500 mt-1" size={20} />
-                  <div>
-                    <h4 className="font-medium text-gray-800">Print Reports</h4>
-                    <p className="text-gray-600 text-sm">Print detailed reports directly from the app</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="text-xl font-semibold text-gray-800 mb-4">Additional Benefits</h3>
-                
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <ul className="space-y-2 text-gray-700">
-                    <li className="flex items-center">
-                      <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
-                      Priority customer support
-                    </li>
-                    <li className="flex items-center">
-                      <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
-                      Advanced analytics and insights
-                    </li>
-                    <li className="flex items-center">
-                      <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
-                      Custom branding options
-                    </li>
-                    <li className="flex items-center">
-                      <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
-                      Team collaboration features
-                    </li>
-                    <li className="flex items-center">
-                      <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
-                      No ads or promotional content
-                    </li>
-                  </ul>
-                </div>
-
-                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                  <h4 className="font-medium text-blue-800 mb-2">7-Day Free Trial</h4>
-                  <p className="text-blue-700 text-sm">
-                    Try Pro risk-free! If you're not completely satisfied, get a full refund within 7 days.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-8 text-center">
-              <button
-                onClick={handleProUpgrade}
-                className="bg-gradient-to-r from-yellow-500 to-orange-500 text-white py-4 px-8 rounded-lg font-bold text-lg hover:from-yellow-600 hover:to-orange-600 transition-all shadow-lg transform hover:scale-105 flex items-center justify-center mx-auto"
-              >
-                <Crown size={24} className="mr-2" />
-                Upgrade to Pro Now
-              </button>
-              <p className="text-gray-500 text-sm mt-2">
-                Cancel anytime • Secure payment • Instant activation
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  const getSyncStatusIcon = () => {
+    switch (syncStatus) {
+      case 'syncing':
+        return <Cloud className="animate-pulse text-blue-500" size={16} />;
+      case 'synced':
+        return <Cloud className="text-green-500" size={16} />;
+      case 'error':
+        return <Cloud className="text-red-500" size={16} />;
+      default:
+        return <Cloud className="text-gray-400" size={16} />;
+    }
+  };
 
   const MenuModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -303,6 +315,144 @@ function App() {
           </div>
           
           <div className="space-y-6">
+            {/* User Section */}
+            {user ? (
+              <section>
+                <h3 className="text-xl font-semibold text-gray-700 mb-2">Account</h3>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center">
+                      <User className="text-indigo-600 mr-2" size={20} />
+                      <span className="font-medium">{user.email}</span>
+                    </div>
+                    {authService.hasPremiumAccess(userProfile) && (
+                      <div className="flex items-center text-yellow-600">
+                        <Crown size={16} className="mr-1" />
+                        <span className="text-sm font-medium">Premium</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {authService.hasPremiumAccess(userProfile) && (
+                    <div className="flex items-center text-sm text-gray-600 mb-2">
+                      {getSyncStatusIcon()}
+                      <span className="ml-2">
+                        {syncStatus === 'syncing' && 'Syncing...'}
+                        {syncStatus === 'synced' && 'Data synced'}
+                        {syncStatus === 'error' && 'Sync failed'}
+                        {syncStatus === 'idle' && 'Cloud sync enabled'}
+                      </span>
+                    </div>
+                  )}
+                  
+                  <div className="flex space-x-2">
+                    {!authService.hasPremiumAccess(userProfile) && (
+                      <button
+                        onClick={() => {
+                          setShowMenu(false);
+                          setShowSubscriptionModal(true);
+                        }}
+                        className="flex-1 bg-gradient-to-r from-yellow-500 to-orange-500 text-white py-2 px-4 rounded-md hover:from-yellow-600 hover:to-orange-600 transition-all shadow-md flex items-center justify-center font-medium text-sm"
+                      >
+                        <Crown size={16} className="mr-2" />
+                        Upgrade to Premium
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setShowMenu(false);
+                        handleSignOut();
+                      }}
+                      className="bg-gray-200 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-300 transition-colors flex items-center text-sm"
+                    >
+                      <LogOut size={16} className="mr-2" />
+                      Sign Out
+                    </button>
+                  </div>
+                </div>
+              </section>
+            ) : (
+              <section>
+                <h3 className="text-xl font-semibold text-gray-700 mb-2">Account</h3>
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    setShowAuthModal(true);
+                  }}
+                  className="w-full bg-indigo-600 text-white py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors flex items-center justify-center font-medium"
+                >
+                  <User size={20} className="mr-2" />
+                  Sign In / Sign Up
+                </button>
+              </section>
+            )}
+
+            {/* Export Section */}
+            <section>
+              <h3 className="text-xl font-semibold text-gray-700 mb-2">Export & Print</h3>
+              <div className="space-y-2">
+                <PremiumFeatureGate
+                  userProfile={userProfile}
+                  onUpgradeClick={() => {
+                    setShowMenu(false);
+                    setShowSubscriptionModal(true);
+                  }}
+                  featureName="PDF Export"
+                >
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      handleExportPDF();
+                    }}
+                    className="w-full px-4 py-2 text-red-600 hover:bg-red-50 rounded-md transition-colors flex items-center"
+                  >
+                    <FileText className="mr-2" size={18} />
+                    Export to PDF
+                  </button>
+                </PremiumFeatureGate>
+
+                <PremiumFeatureGate
+                  userProfile={userProfile}
+                  onUpgradeClick={() => {
+                    setShowMenu(false);
+                    setShowSubscriptionModal(true);
+                  }}
+                  featureName="Excel Export"
+                >
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      handleExportExcel();
+                    }}
+                    className="w-full px-4 py-2 text-green-600 hover:bg-green-50 rounded-md transition-colors flex items-center"
+                  >
+                    <Download className="mr-2" size={18} />
+                    Export to Excel
+                  </button>
+                </PremiumFeatureGate>
+
+                <PremiumFeatureGate
+                  userProfile={userProfile}
+                  onUpgradeClick={() => {
+                    setShowMenu(false);
+                    setShowSubscriptionModal(true);
+                  }}
+                  featureName="Print Reports"
+                >
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      handlePrint();
+                    }}
+                    className="w-full px-4 py-2 text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors flex items-center"
+                  >
+                    <Printer className="mr-2" size={18} />
+                    Print Report
+                  </button>
+                </PremiumFeatureGate>
+              </div>
+            </section>
+
             <section>
               <h3 className="text-xl font-semibold text-gray-700 mb-2">Documentation</h3>
               <div className="space-y-4">
@@ -328,12 +478,12 @@ function App() {
                 </section>
 
                 <section>
-                  <h4 className="text-lg font-medium text-gray-700 mb-2">Features</h4>
+                  <h4 className="text-lg font-medium text-gray-700 mb-2">Premium Features</h4>
                   <ul className="list-disc list-inside space-y-1 text-gray-600">
-                    <li>Hide amounts for privacy</li>
-                    <li>Save counts to history</li>
-                    <li>Built-in calculator</li>
-                    <li>Multiple currency support</li>
+                    <li>Cloud storage and multi-device sync</li>
+                    <li>Export to PDF and Excel formats</li>
+                    <li>Print professional reports</li>
+                    <li>Daily automatic backups</li>
                   </ul>
                 </section>
               </div>
@@ -360,20 +510,6 @@ function App() {
                 </a>
               </div>
             </section>
-
-            <section>
-              <h3 className="text-xl font-semibold text-gray-700 mb-2">Upgrade</h3>
-              <button
-                onClick={() => {
-                  setShowMenu(false);
-                  setShowProModal(true);
-                }}
-                className="w-full mt-2 bg-gradient-to-r from-yellow-500 to-orange-500 text-white py-3 px-4 rounded-md hover:from-yellow-600 hover:to-orange-600 transition-all shadow-md flex items-center justify-center font-medium"
-              >
-                <Crown size={20} className="mr-2" />
-                Become Pro Counter
-              </button>
-            </section>
           </div>
         </div>
       </div>
@@ -392,6 +528,9 @@ function App() {
                 <h1 className="text-2xl font-bold flex items-center">
                   <CurrencyIcon className="mr-2" />
                   Note Counter
+                  {authService.hasPremiumAccess(userProfile) && (
+                    <Crown className="ml-2 text-yellow-300" size={20} />
+                  )}
                 </h1>
                 <div className="md:hidden">
                   <button 
@@ -436,6 +575,11 @@ function App() {
                       History
                     </div>
                   </button>
+                  {user && authService.hasPremiumAccess(userProfile) && (
+                    <div className="flex items-center text-sm">
+                      {getSyncStatusIcon()}
+                    </div>
+                  )}
                   <button
                     onClick={() => setShowMenu(true)}
                     className="ml-2 p-2 rounded-full hover:bg-indigo-700/50 transition-colors"
@@ -507,7 +651,25 @@ function App() {
             )}
 
             {showMenu && <MenuModal />}
-            {showProModal && <ProModal />}
+            
+            <AuthModal
+              isOpen={showAuthModal}
+              onClose={() => setShowAuthModal(false)}
+              onAuthSuccess={() => {
+                setShowAuthModal(false);
+                checkAuth();
+              }}
+            />
+
+            <SubscriptionModal
+              isOpen={showSubscriptionModal}
+              onClose={() => setShowSubscriptionModal(false)}
+              userProfile={userProfile}
+              onSubscriptionSuccess={() => {
+                setShowSubscriptionModal(false);
+                if (user) loadUserProfile(user.id);
+              }}
+            />
 
             <div className="container mx-auto p-4">
               {activeTab === 'counter' ? (
@@ -619,7 +781,12 @@ function App() {
                   </div>
                 </div>
               ) : (
-                <HistoryTab hideAmounts={hideAmounts} selectedCurrency={selectedCurrency} />
+                <HistoryTab 
+                  hideAmounts={hideAmounts} 
+                  selectedCurrency={selectedCurrency}
+                  userProfile={userProfile}
+                  onUpgradeClick={() => setShowSubscriptionModal(true)}
+                />
               )}
             </div>
 
@@ -655,7 +822,7 @@ function App() {
                     <Heart size={20} className="mr-2" />
                     <span>Sponsor</span>
                   </a>
-                  <span className="text-gray-400 text-sm">Version 9.1.1</span>
+                  <span className="text-gray-400 text-sm">Version 10.0.0</span>
                 </div>
               </div>
             </footer>
