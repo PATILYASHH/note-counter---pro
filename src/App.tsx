@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { IndianRupee, Menu, Github, Globe, History, Calculator, Save, Eye, EyeOff, X, Mail, Heart, DollarSign, MenuIcon, Crown, Cloud, Smartphone, Shield, FileText, Printer, User, LogOut, Download } from 'lucide-react';
+import { IndianRupee, Menu, Github, Globe, History, Calculator, Save, Eye, EyeOff, X, Mail, Heart, DollarSign, MenuIcon, Crown, Cloud, Smartphone, Shield, FileText, Printer, User, LogOut, Download, Settings, CreditCard, Database, Bell } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { authService, UserProfile } from './lib/auth';
 import { cloudStorageService } from './lib/cloudStorage';
@@ -12,6 +12,7 @@ import Advertisement from './components/Advertisement';
 import AuthModal from './components/AuthModal';
 import SubscriptionModal from './components/SubscriptionModal';
 import PremiumFeatureGate from './components/PremiumFeatureGate';
+import UserProfileModal from './components/UserProfileModal';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 
@@ -53,6 +54,7 @@ function App() {
   const [showMenu, setShowMenu] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState<'INR' | 'USD'>('INR');
   const [user, setUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -323,7 +325,7 @@ function App() {
 
   const MenuModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-bold text-gray-800">Menu</h2>
@@ -340,14 +342,21 @@ function App() {
             {user ? (
               <section>
                 <h3 className="text-xl font-semibold text-gray-700 mb-2">Account</h3>
-                <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-4 rounded-lg border border-indigo-100">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center">
-                      <User className="text-indigo-600 mr-2" size={20} />
-                      <span className="font-medium">{user.email}</span>
+                      <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center mr-3">
+                        <User className="text-white" size={20} />
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-800">{user.email}</div>
+                        <div className="text-sm text-gray-600">
+                          {authService.hasPremiumAccess(userProfile) ? 'Premium Member' : 'Free Account'}
+                        </div>
+                      </div>
                     </div>
                     {authService.hasPremiumAccess(userProfile) && (
-                      <div className="flex items-center text-yellow-600">
+                      <div className="flex items-center text-yellow-600 bg-yellow-100 px-2 py-1 rounded-full">
                         <Crown size={16} className="mr-1" />
                         <span className="text-sm font-medium">Premium</span>
                       </div>
@@ -355,28 +364,38 @@ function App() {
                   </div>
                   
                   {authService.hasPremiumAccess(userProfile) && (
-                    <div className="flex items-center text-sm text-gray-600 mb-2">
+                    <div className="flex items-center text-sm text-gray-600 mb-3 bg-white p-2 rounded-md">
                       {getSyncStatusIcon()}
                       <span className="ml-2">
-                        {syncStatus === 'syncing' && 'Syncing...'}
-                        {syncStatus === 'synced' && 'Data synced'}
-                        {syncStatus === 'error' && 'Sync failed'}
+                        {syncStatus === 'syncing' && 'Syncing data...'}
+                        {syncStatus === 'synced' && 'Data synced successfully'}
+                        {syncStatus === 'error' && 'Sync failed - please try again'}
                         {syncStatus === 'idle' && 'Cloud sync enabled'}
                       </span>
                     </div>
                   )}
                   
-                  <div className="flex space-x-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => {
+                        setShowMenu(false);
+                        setShowProfileModal(true);
+                      }}
+                      className="bg-white text-indigo-600 py-2 px-3 rounded-md hover:bg-indigo-50 transition-colors flex items-center justify-center font-medium text-sm border border-indigo-200"
+                    >
+                      <Settings size={16} className="mr-2" />
+                      Profile
+                    </button>
                     {!authService.hasPremiumAccess(userProfile) && (
                       <button
                         onClick={() => {
                           setShowMenu(false);
                           setShowSubscriptionModal(true);
                         }}
-                        className="flex-1 bg-gradient-to-r from-yellow-500 to-orange-500 text-white py-2 px-4 rounded-md hover:from-yellow-600 hover:to-orange-600 transition-all shadow-md flex items-center justify-center font-medium text-sm"
+                        className="bg-gradient-to-r from-yellow-500 to-orange-500 text-white py-2 px-3 rounded-md hover:from-yellow-600 hover:to-orange-600 transition-all shadow-md flex items-center justify-center font-medium text-sm"
                       >
                         <Crown size={16} className="mr-2" />
-                        Upgrade to Premium
+                        Upgrade
                       </button>
                     )}
                     <button
@@ -384,7 +403,7 @@ function App() {
                         setShowMenu(false);
                         handleSignOut();
                       }}
-                      className="bg-gray-200 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-300 transition-colors flex items-center text-sm"
+                      className="bg-gray-200 text-gray-700 py-2 px-3 rounded-md hover:bg-gray-300 transition-colors flex items-center justify-center text-sm"
                     >
                       <LogOut size={16} className="mr-2" />
                       Sign Out
@@ -395,23 +414,58 @@ function App() {
             ) : (
               <section>
                 <h3 className="text-xl font-semibold text-gray-700 mb-2">Account</h3>
+                <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-4 rounded-lg border border-gray-200">
+                  <div className="text-center mb-4">
+                    <div className="w-16 h-16 bg-gray-300 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <User className="text-gray-600" size={32} />
+                    </div>
+                    <p className="text-gray-600 mb-4">Sign in to access premium features and sync your data across devices</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      setShowAuthModal(true);
+                    }}
+                    className="w-full bg-indigo-600 text-white py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors flex items-center justify-center font-medium"
+                  >
+                    <User size={20} className="mr-2" />
+                    Sign In / Sign Up
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {/* Quick Actions */}
+            <section>
+              <h3 className="text-xl font-semibold text-gray-700 mb-2">Quick Actions</h3>
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => {
                     setShowMenu(false);
-                    setShowAuthModal(true);
+                    setHideAmounts(!hideAmounts);
                   }}
-                  className="w-full bg-indigo-600 text-white py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors flex items-center justify-center font-medium"
+                  className="bg-gray-100 text-gray-700 py-2 px-3 rounded-md hover:bg-gray-200 transition-colors flex items-center justify-center text-sm"
                 >
-                  <User size={20} className="mr-2" />
-                  Sign In / Sign Up
+                  {hideAmounts ? <Eye size={16} className="mr-2" /> : <EyeOff size={16} className="mr-2" />}
+                  {hideAmounts ? 'Show' : 'Hide'} Amounts
                 </button>
-              </section>
-            )}
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    handleSave();
+                  }}
+                  className="bg-green-100 text-green-700 py-2 px-3 rounded-md hover:bg-green-200 transition-colors flex items-center justify-center text-sm"
+                >
+                  <Save size={16} className="mr-2" />
+                  Save Current
+                </button>
+              </div>
+            </section>
 
             {/* Export Section */}
             <section>
               <h3 className="text-xl font-semibold text-gray-700 mb-2">Export & Print</h3>
-              <div className="space-y-2">
+              <div className="grid grid-cols-1 gap-2">
                 <PremiumFeatureGate
                   userProfile={userProfile}
                   onUpgradeClick={() => {
@@ -429,7 +483,7 @@ function App() {
                       setShowMenu(false);
                       handleExportPDF();
                     }}
-                    className="w-full px-4 py-2 text-red-600 hover:bg-red-50 rounded-md transition-colors flex items-center"
+                    className="w-full px-4 py-3 text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition-colors flex items-center justify-center font-medium"
                   >
                     <FileText className="mr-2" size={18} />
                     Export to PDF
@@ -453,7 +507,7 @@ function App() {
                       setShowMenu(false);
                       handleExportExcel();
                     }}
-                    className="w-full px-4 py-2 text-green-600 hover:bg-green-50 rounded-md transition-colors flex items-center"
+                    className="w-full px-4 py-3 text-green-600 bg-green-50 hover:bg-green-100 rounded-md transition-colors flex items-center justify-center font-medium"
                   >
                     <Download className="mr-2" size={18} />
                     Export to Excel
@@ -477,7 +531,7 @@ function App() {
                       setShowMenu(false);
                       handlePrint();
                     }}
-                    className="w-full px-4 py-2 text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors flex items-center"
+                    className="w-full px-4 py-3 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors flex items-center justify-center font-medium"
                   >
                     <Printer className="mr-2" size={18} />
                     Print Report
@@ -613,6 +667,24 @@ function App() {
                       {getSyncStatusIcon()}
                     </div>
                   )}
+                  {user ? (
+                    <button
+                      onClick={() => setShowProfileModal(true)}
+                      className="ml-2 p-2 rounded-full hover:bg-indigo-700/50 transition-colors flex items-center"
+                      title="User Profile"
+                    >
+                      <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
+                        <User className="text-indigo-600" size={16} />
+                      </div>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setShowAuthModal(true)}
+                      className="ml-2 bg-white text-indigo-600 py-2 px-4 rounded-md hover:bg-gray-100 transition-colors font-medium"
+                    >
+                      Sign In
+                    </button>
+                  )}
                   <button
                     onClick={() => setShowMenu(true)}
                     className="ml-2 p-2 rounded-full hover:bg-indigo-700/50 transition-colors"
@@ -667,6 +739,28 @@ function App() {
                       History
                     </div>
                   </button>
+                  {user ? (
+                    <button
+                      onClick={() => {
+                        setShowProfileModal(true);
+                        setMobileMenuOpen(false);
+                      }}
+                      className="w-full py-2 px-4 rounded-md font-medium mb-2 text-white hover:bg-indigo-700/50 flex items-center"
+                    >
+                      <User className="mr-2" size={18} />
+                      Profile
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setShowAuthModal(true);
+                        setMobileMenuOpen(false);
+                      }}
+                      className="w-full py-2 px-4 rounded-md font-medium mb-2 bg-white text-indigo-600 hover:bg-gray-100"
+                    >
+                      Sign In
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       setShowMenu(true);
@@ -702,6 +796,24 @@ function App() {
                 setShowSubscriptionModal(false);
                 if (user) loadUserProfile(user.id);
               }}
+            />
+
+            <UserProfileModal
+              isOpen={showProfileModal}
+              onClose={() => setShowProfileModal(false)}
+              user={user}
+              userProfile={userProfile}
+              onProfileUpdate={() => {
+                if (user) loadUserProfile(user.id);
+              }}
+              onUpgradeClick={() => {
+                setShowProfileModal(false);
+                setShowSubscriptionModal(true);
+              }}
+              onSignOut={handleSignOut}
+              syncStatus={syncStatus}
+              onSyncToCloud={syncToCloud}
+              onSyncFromCloud={syncFromCloud}
             />
 
             <div className="container mx-auto p-4">
