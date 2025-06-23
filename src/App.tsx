@@ -8,13 +8,10 @@ import { exportService } from './lib/exportService';
 import DenominationCounter from './components/DenominationCounter';
 import HistoryTab from './components/HistoryTab';
 import SimpleCalculator from './components/SimpleCalculator';
-import Advertisement from './components/Advertisement';
 import AuthModal from './components/AuthModal';
 import SubscriptionModal from './components/SubscriptionModal';
 import PremiumFeatureGate from './components/PremiumFeatureGate';
 import UserProfileModal from './components/UserProfileModal';
-import AdminLogin from './pages/AdminLogin';
-import AdminDashboard from './pages/AdminDashboard';
 
 const CURRENCY_DENOMINATIONS = {
   INR: [
@@ -606,8 +603,6 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/admin" element={<AdminLogin />} />
-        <Route path="/admin/dashboard" element={<AdminDashboard />} />
         <Route path="*" element={
           <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
             <header className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white p-4 shadow-lg">
@@ -940,8 +935,6 @@ function App() {
                 />
               )}
             </div>
-
-            <Advertisement />
 
             <footer className="bg-gray-800 text-white py-6">
               <div className="container mx-auto px-4">
