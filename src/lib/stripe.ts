@@ -1,4 +1,5 @@
 import { loadStripe } from '@stripe/stripe-js';
+import { pricingService } from './pricing';
 
 const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 
@@ -10,7 +11,7 @@ export const isStripeConfigured = () => {
 
 export const stripeService = {
   // Create checkout session for subscription
-  async createCheckoutSession(priceId: string, userId: string, email: string) {
+  async createCheckoutSession(planId: string, userId: string, email: string) {
     try {
       // In a real implementation, this would call your backend API
       // which would create a Stripe checkout session
@@ -20,7 +21,7 @@ export const stripeService = {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          priceId,
+          planId,
           userId,
           email,
           successUrl: `${window.location.origin}?session_id={CHECKOUT_SESSION_ID}`,
@@ -53,13 +54,13 @@ export const stripeService = {
   },
 
   // Simulate successful payment for demo purposes
-  async simulatePayment(plan: 'monthly' | 'annual') {
+  async simulatePayment(planId: string) {
     return new Promise((resolve) => {
       setTimeout(() => {
         resolve({
           success: true,
           subscriptionId: `sub_${Date.now()}`,
-          plan,
+          planId,
         });
       }, 2000);
     });
@@ -68,6 +69,7 @@ export const stripeService = {
 
 // Stripe price IDs (these would be configured in your Stripe dashboard)
 export const STRIPE_PRICES = {
-  monthly: 'price_monthly_999', // $9.99/month
-  annual: 'price_annual_10000', // $100/year
+  monthly: 'price_monthly_100', // $1/month
+  quarterly: 'price_quarterly_300', // $3/3 months
+  annual: 'price_annual_1000', // $10/year
 };
