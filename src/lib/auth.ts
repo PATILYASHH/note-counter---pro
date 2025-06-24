@@ -3,16 +3,17 @@ import { supabase } from './supabase';
 export interface UserProfile {
   id: string;
   email: string;
-  subscription_tier: 'free' | 'monthly' | 'annual';
+  subscription_tier: 'free' | 'monthly' | 'quarterly' | 'annual';
   subscription_status: 'inactive' | 'active' | 'cancelled' | 'expired';
   subscription_start?: string;
   subscription_end?: string;
+  email_verified: boolean;
   created_at: string;
   updated_at: string;
 }
 
 export const authService = {
-  // Sign up new user
+  // Sign up new user with email verification
   async signUp(email: string, password: string) {
     if (!supabase) throw new Error('Supabase not configured');
     
@@ -20,7 +21,7 @@ export const authService = {
       email,
       password,
       options: {
-        emailRedirectTo: undefined // Disable email confirmation
+        emailRedirectTo: `${window.location.origin}/verify-email`
       }
     });
     
@@ -38,7 +39,28 @@ export const authService = {
     });
     
     if (error) throw error;
+    
+    // Check if email is verified
+    if (data.user && !data.user.email_confirmed_at) {
+      throw new Error('Please verify your email address before signing in. Check your inbox for the verification link.');
+    }
+    
     return data;
+  },
+
+  // Resend verification email
+  async resendVerification(email: string) {
+    if (!supabase) throw new Error('Supabase not configured');
+    
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/verify-email`
+      }
+    });
+    
+    if (error) throw error;
   },
 
   // Sign out user
@@ -76,12 +98,14 @@ export const authService = {
   },
 
   // Update subscription
-  async updateSubscription(userId: string, tier: 'monthly' | 'annual') {
+  async updateSubscription(userId: string, tier: 'monthly' | 'quarterly' | 'annual') {
     if (!supabase) throw new Error('Supabase not configured');
     
     const subscriptionEnd = new Date();
     if (tier === 'monthly') {
       subscriptionEnd.setMonth(subscriptionEnd.getMonth() + 1);
+    } else if (tier === 'quarterly') {
+      subscriptionEnd.setMonth(subscriptionEnd.getMonth() + 3);
     } else {
       subscriptionEnd.setFullYear(subscriptionEnd.getFullYear() + 1);
     }
@@ -106,6 +130,9 @@ export const authService = {
   hasPremiumAccess(profile: UserProfile | null): boolean {
     if (!profile) return false;
     
+    // Check email verification first
+    if (!profile.email_verified) return false;
+    
     // Admin always has access
     if (profile.email === 'patilyasshh@gmail.com') return true;
     
@@ -124,5 +151,10 @@ export const authService = {
   // Check if user is admin
   isAdmin(profile: UserProfile | null): boolean {
     return profile?.email === 'patilyasshh@gmail.com';
+  },
+
+  // Check if email is verified
+  isEmailVerified(user: any, profile: UserProfile | null): boolean {
+    return !!(user?.email_confirmed_at || profile?.email_verified);
   }
 };

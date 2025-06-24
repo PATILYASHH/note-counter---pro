@@ -12,6 +12,7 @@ import AuthModal from './components/AuthModal';
 import SubscriptionModal from './components/SubscriptionModal';
 import PremiumFeatureGate from './components/PremiumFeatureGate';
 import UserProfileModal from './components/UserProfileModal';
+import EmailVerificationBanner from './components/EmailVerificationBanner';
 
 const CURRENCY_DENOMINATIONS = {
   INR: [
@@ -52,6 +53,7 @@ function App() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showEmailBanner, setShowEmailBanner] = useState(true);
   const [selectedCurrency, setSelectedCurrency] = useState<'INR' | 'USD'>('INR');
   const [user, setUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -106,6 +108,11 @@ function App() {
   const checkPremiumAccess = (featureName: string) => {
     if (!user) {
       setShowAuthModal(true);
+      return false;
+    }
+    
+    if (!authService.isEmailVerified(user, userProfile)) {
+      setShowEmailBanner(true);
       return false;
     }
     
@@ -349,6 +356,9 @@ function App() {
                         <div className="font-medium text-gray-800">{user.email}</div>
                         <div className="text-sm text-gray-600">
                           {authService.hasPremiumAccess(userProfile) ? 'Premium Member' : 'Free Account'}
+                          {!authService.isEmailVerified(user, userProfile) && (
+                            <span className="text-red-600 ml-2">(Email not verified)</span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -605,6 +615,15 @@ function App() {
       <Routes>
         <Route path="*" element={
           <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
+            {/* Email Verification Banner */}
+            {user && showEmailBanner && !authService.isEmailVerified(user, userProfile) && (
+              <EmailVerificationBanner
+                user={user}
+                userProfile={userProfile}
+                onClose={() => setShowEmailBanner(false)}
+              />
+            )}
+
             <header className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white p-4 shadow-lg">
               <div className="container mx-auto flex justify-between items-center">
                 <h1 className="text-2xl font-bold flex items-center">
@@ -671,6 +690,9 @@ function App() {
                       <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
                         <User className="text-indigo-600" size={16} />
                       </div>
+                      {!authService.isEmailVerified(user, userProfile) && (
+                        <div className="w-2 h-2 bg-red-500 rounded-full absolute ml-6 -mt-6"></div>
+                      )}
                     </button>
                   ) : (
                     <button
@@ -744,6 +766,9 @@ function App() {
                     >
                       <User className="mr-2" size={18} />
                       Profile
+                      {!authService.isEmailVerified(user, userProfile) && (
+                        <div className="w-2 h-2 bg-red-500 rounded-full ml-2"></div>
+                      )}
                     </button>
                   ) : (
                     <button
@@ -787,6 +812,7 @@ function App() {
               isOpen={showSubscriptionModal}
               onClose={() => setShowSubscriptionModal(false)}
               userProfile={userProfile}
+              selectedCurrency={selectedCurrency}
               onSubscriptionSuccess={() => {
                 setShowSubscriptionModal(false);
                 if (user) loadUserProfile(user.id);
@@ -966,7 +992,7 @@ function App() {
                     <Heart size={20} className="mr-2" />
                     <span>Sponsor</span>
                   </a>
-                  <span className="text-gray-400 text-sm">Version 10.1.0</span>
+                  <span className="text-gray-400 text-sm">Version 11.0.0</span>
                 </div>
               </div>
             </footer>

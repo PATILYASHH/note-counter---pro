@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { X, Crown, Check, CreditCard, Shield, Cloud, Smartphone, FileText, Printer, AlertCircle } from 'lucide-react';
 import { authService } from '../lib/auth';
-import { stripeService, isStripeConfigured, STRIPE_PRICES } from '../lib/stripe';
+import { stripeService, isStripeConfigured } from '../lib/stripe';
+import { pricingService, PricingPlan } from '../lib/pricing';
 import { UserProfile } from '../lib/auth';
 
 interface SubscriptionModalProps {
@@ -9,40 +10,33 @@ interface SubscriptionModalProps {
   onClose: () => void;
   userProfile: UserProfile | null;
   onSubscriptionSuccess: () => void;
+  selectedCurrency: 'INR' | 'USD';
 }
 
 const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ 
   isOpen, 
   onClose, 
   userProfile,
-  onSubscriptionSuccess 
+  onSubscriptionSuccess,
+  selectedCurrency 
 }) => {
-  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('annual');
+  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'quarterly' | 'annual'>('quarterly');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   if (!isOpen) return null;
 
-  const plans = {
-    monthly: {
-      name: 'Monthly Plan',
-      price: 9.99,
-      period: 'month',
-      savings: null,
-      priceId: STRIPE_PRICES.monthly,
-    },
-    annual: {
-      name: 'Annual Plan',
-      price: 100,
-      period: 'year',
-      savings: 19.88,
-      priceId: STRIPE_PRICES.annual,
-    }
-  };
+  const plans = pricingService.getPricingPlans();
+  const exchangeRate = pricingService.getExchangeRate();
 
   const handleSubscribe = async () => {
     if (!userProfile) {
       setError('Please sign in to subscribe');
+      return;
+    }
+
+    if (!userProfile.email_verified) {
+      setError('Please verify your email address before subscribing');
       return;
     }
     
@@ -53,7 +47,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
       if (isStripeConfigured()) {
         // Use real Stripe integration
         await stripeService.createCheckoutSession(
-          plans[selectedPlan].priceId,
+          selectedPlan,
           userProfile.id,
           userProfile.email
         );
@@ -75,6 +69,8 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
       setLoading(false);
     }
   };
+
+  const selectedPlanData = plans.find(p => p.id === selectedPlan)!;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -100,6 +96,13 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
             </div>
           )}
 
+          {selectedCurrency === 'INR' && (
+            <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded-md flex items-center">
+              <Check size={18} className="mr-2" />
+              Prices shown in Indian Rupees (₹) at current exchange rate: $1 = ₹{exchangeRate}
+            </div>
+          )}
+
           {error && (
             <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md">
               {error}
@@ -111,35 +114,40 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
             <div>
               <h3 className="text-xl font-semibold mb-4">Choose Your Plan</h3>
               <div className="space-y-4">
-                {Object.entries(plans).map(([key, plan]) => (
+                {plans.map((plan) => (
                   <div
-                    key={key}
+                    key={plan.id}
                     className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
-                      selectedPlan === key
+                      selectedPlan === plan.id
                         ? 'border-indigo-500 bg-indigo-50'
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
-                    onClick={() => setSelectedPlan(key as 'monthly' | 'annual')}
+                    onClick={() => setSelectedPlan(plan.id)}
                   >
                     <div className="flex justify-between items-center">
                       <div>
                         <h4 className="font-semibold text-lg">{plan.name}</h4>
                         <div className="text-2xl font-bold text-indigo-600">
-                          ${plan.price}
+                          {pricingService.formatPrice(plan, selectedCurrency)}
                           <span className="text-sm text-gray-600">/{plan.period}</span>
                         </div>
                         {plan.savings && (
                           <div className="text-green-600 text-sm font-medium">
-                            Save ${plan.savings}
+                            {pricingService.getSavingsText(plan, selectedCurrency)}
+                          </div>
+                        )}
+                        {selectedCurrency === 'INR' && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            ${plan.priceUSD} USD
                           </div>
                         )}
                       </div>
                       <div className={`w-6 h-6 rounded-full border-2 ${
-                        selectedPlan === key
+                        selectedPlan === plan.id
                           ? 'border-indigo-500 bg-indigo-500'
                           : 'border-gray-300'
                       }`}>
-                        {selectedPlan === key && (
+                        {selectedPlan === plan.id && (
                           <Check size={14} className="text-white m-0.5" />
                         )}
                       </div>
@@ -229,16 +237,21 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
             <div className="flex justify-between items-center mb-4">
               <div>
                 <div className="text-lg font-semibold">
-                  Total: ${plans[selectedPlan].price}
+                  Total: {pricingService.formatPrice(selectedPlanData, selectedCurrency)}
                 </div>
                 <div className="text-gray-600 text-sm">
-                  Billed {selectedPlan === 'monthly' ? 'monthly' : 'annually'}
+                  Billed every {selectedPlanData.period}
                 </div>
+                {selectedPlanData.savings && (
+                  <div className="text-green-600 text-sm font-medium">
+                    {pricingService.getSavingsText(selectedPlanData, selectedCurrency)}
+                  </div>
+                )}
               </div>
               <button
                 onClick={handleSubscribe}
-                disabled={loading || !userProfile}
-                className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 px-8 rounded-lg font-bold text-lg hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg transform hover:scale-105 flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading || !userProfile || !userProfile.email_verified}
+                className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 px-8 rounded-lg font-bold text-lg hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg transform hover:scale-105 flex items-center disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
               >
                 <CreditCard size={20} className="mr-2" />
                 {loading ? 'Processing...' : isStripeConfigured() ? 'Subscribe with Stripe' : 'Subscribe Now (Demo)'}
@@ -250,6 +263,11 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                 : 'Demo mode: No actual payment required • Full features unlocked for testing'
               }
             </p>
+            {!userProfile?.email_verified && (
+              <p className="text-red-500 text-sm text-center mt-2">
+                Please verify your email address before subscribing
+              </p>
+            )}
           </div>
         </div>
       </div>
